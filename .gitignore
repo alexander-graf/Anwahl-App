@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.venv/
+venv/
+
+# Lokale App-Daten (Persönliche Informationen!)
+app.db
+device_ip.txt
+history.txt
+
+# Screenshots, Downloads und Backups
+screenshot.png
+downloads/
+*.apk
+*.tar.gz
+*backup*
+
+# IDEs / Editoren
+.vscode/
+.idea/
+*.swp
+*~
+.directory
