@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTabWidget, QLabel, QLineEdit, QPushButton, QTableWidget,
     QTableWidgetItem, QHeaderView, QDialog, QTextEdit, QMessageBox,
-    QMenu
+    QMenu, QCheckBox
 )
 
 # Pfade und Umgebungsdaten einrichten
@@ -762,41 +762,45 @@ class CallMonitorThread(QThread):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.running = True
+        self.active = False
         self.was_ringing = False
         
     def run(self):
         while self.running:
-            try:
-                # We do dumpsys telephony.registry to check call state
-                res = subprocess.run(
-                    ["adb", "shell", "dumpsys", "telephony.registry"],
-                    capture_output=True, text=True, timeout=2
-                )
-                if res.returncode == 0:
-                    state = "0"
-                    number = ""
-                    for line in res.stdout.splitlines():
-                        line = line.strip()
-                        if line.startswith("mCallState="):
-                            curr_state = line.split("=")[1].strip()
-                            if curr_state == "1":
-                                state = "1"
-                        elif line.startswith("mCallIncomingNumber="):
-                            curr_number = line.split("=")[1].strip()
-                            if curr_number:
-                                number = curr_number
-                    
-                    if state == "1":
-                        if not self.was_ringing:
-                            self.was_ringing = True
-                            self.incoming_call.emit(number)
-                    elif state in ["0", "2"]:
-                        if self.was_ringing:
-                            self.was_ringing = False
-                            self.call_ended.emit()
-            except Exception as e:
-                pass
-            time.sleep(1.5)
+            if self.active:
+                try:
+                    # We do dumpsys telephony.registry to check call state
+                    res = subprocess.run(
+                        ["adb", "shell", "dumpsys", "telephony.registry"],
+                        capture_output=True, text=True, timeout=2
+                    )
+                    if res.returncode == 0:
+                        state = "0"
+                        number = ""
+                        for line in res.stdout.splitlines():
+                            line = line.strip()
+                            if line.startswith("mCallState="):
+                                curr_state = line.split("=")[1].strip()
+                                if curr_state == "1":
+                                    state = "1"
+                            elif line.startswith("mCallIncomingNumber="):
+                                curr_number = line.split("=")[1].strip()
+                                if curr_number:
+                                    number = curr_number
+                        
+                        if state == "1":
+                            if not self.was_ringing:
+                                self.was_ringing = True
+                                self.incoming_call.emit(number)
+                        elif state in ["0", "2"]:
+                            if self.was_ringing:
+                                self.was_ringing = False
+                                self.call_ended.emit()
+                except Exception as e:
+                    pass
+                time.sleep(1.5)
+            else:
+                time.sleep(1.0)
             
     def stop(self):
         self.running = False
@@ -1084,6 +1088,13 @@ class MainWindow(QMainWindow):
         hist_header_layout = QHBoxLayout()
         hist_header_layout.addWidget(QLabel("<b>Letzte Anrufe:</b> (Doppelklick zum Wählen, Rechtsklick für Optionen)"))
         
+        # Anruf-Monitor Checkbox (für Akku-Schonung)
+        self.chk_monitor = QCheckBox("Anruf-Monitor")
+        self.chk_monitor.setChecked(False)
+        self.chk_monitor.setStyleSheet("font-weight: bold; color: #ff3b30; margin-right: 15px;") # Rot (inaktiv)
+        self.chk_monitor.toggled.connect(self.toggle_call_monitor)
+        hist_header_layout.addWidget(self.chk_monitor)
+
         btn_clear_hist = QPushButton("Verlauf löschen")
         btn_clear_hist.setStyleSheet("background-color: #ff3b30; padding: 4px 12px; font-weight: normal; max-width: 150px;")
         btn_clear_hist.clicked.connect(self.clear_history)
@@ -1484,6 +1495,15 @@ class MainWindow(QMainWindow):
     def handle_call_ended(self):
         if hasattr(self, "incoming_call_dlg") and self.incoming_call_dlg:
             self.incoming_call_dlg.reject()
+
+    def toggle_call_monitor(self, checked):
+        self.monitor_thread.active = checked
+        if checked:
+            print("Anruf-Monitor auf dem Handy wurde aktiviert (Akkulast steigt).")
+            self.chk_monitor.setStyleSheet("font-weight: bold; color: #28a745; margin-right: 15px;") # Grün
+        else:
+            print("Anruf-Monitor wurde deaktiviert (Handy schont Akku).")
+            self.chk_monitor.setStyleSheet("font-weight: bold; color: #ff3b30; margin-right: 15px;") # Rot
 
     def handle_sync_step(self, step_type, count):
         if step_type == "contacts":
